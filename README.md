@@ -283,15 +283,67 @@ Next, I use the “show ip interface” command to verify which ACLs are activel
 <br>
 
 <p>
-- 
+- To test the core security controls of the EXEC_INBOUND and LOBBY_INBOUND Extended ACLs applied on R1, I initiate web traffic verification tests from different corporate layers targeting the HTTPS Server (192.168.1.100). First, I attempt to access the web service from PC1 in the Executives VLAN (100.1.1.11) using the web browser. The application loads successfully over HTTPS (port 443). I repeat this test from PC5 in the Lobby VLAN (100.3.3.11), but this time with HTTP (port 80), which succeeds.
+  
+This validates that the EXEC_INBOUND and LOBBY_INBOUND lists correctly grant web access to authorized tiers because of the explicit Layer 4 tcp port 80 and 443 rules, Executives require access to web management platforms, and guests must be allowed to open the central public-facing portal over safe internet protocols.
 </p>
 <p>
-
+<img width="777" height="255" alt="image" src="https://github.com/user-attachments/assets/772d4f20-408c-49bb-a920-c34ea9710a4a" />
+</p>
+<p>
+<img width="777" height="222" alt="image" src="https://github.com/user-attachments/assets/eca2bf95-9fd3-4d68-a3ce-79560bbeea27" />
 </p>
 <br>
 
 <p>
-- 
+- To verify the enforcement boundaries of the consolidated OP_INBOUND filter, I attempt a web connection from PC3 inside the restricted Operations VLAN (100.2.2.11) toward the HTTPS Server (192.168.1.100). The request results in a timeout error in the browser interface. Because the Extended Named ACL intercepts inbound traffic on subinterface g0/0.20 and checks for matching TCP parameters, the session immediately drops at the router inbound boundary because of the explicit server deny entry, proving that unauthorized application-layer access strings are actively dropped. The reason we want this blocked is because Operations users focus strictly on back-end utility functions, they have no baseline business requirement to browse the front-facing web portal, allowing us to proactively deny it.
+</p>
+<p>
+<img width="778" height="188" alt="image" src="https://github.com/user-attachments/assets/7c8de151-8715-4a61-9139-a2ee65448f08" />
+</p>
+<br>
+
+<p>
+- To validate the DNS permissions of the consolidated EXEC_INBOUND and OP_INBOUND , I perform verification tests across multiple subnets. From the command prompt of PC1 in the Executives VLAN (100.1.1.11), I run a name resolution ping command targeting R1 by pinging the router’s hostname “R1”, instead of using the regular IP address.The lookup succeeds, translating the router’s name to its mapped destination. I repeat this validation step successfully from PC3 in the Operations VLAN (100.2.2.11). The successful name translation confirms that the network safely resolves critical resources across the internal routing fabric. The reason we want these lookups to pass cleanly is because internal naming resolution via the central domain controller is a vital operational utility required by both internal workers and system administrators to trace network hardware, reach core routers, and handle standard daily connectivity workflows without having to always type raw IP addresses. The 3rd screenshot shows the same ping, this time from PC5 in the Lobby VLAN. The translation utility immediately stalls and prints a resolution error, proving that guest nodes are blocked from polling the environment. The reason we explicitly constructed this block in Step 14 is to protect our internal infrastructure footprint; allowing public guest machines to resolve hostname records for critical assets like R1 and R2 would grant potential attackers visibility into corporate naming and internal routing layouts.
+</p>
+<p>
+<img width="773" height="378" alt="image" src="https://github.com/user-attachments/assets/beb6d740-815c-4d7f-a1a6-6b8fb9079907" />
+</p>
+<p>
+<img width="774" height="387" alt="image" src="https://github.com/user-attachments/assets/864f4d06-5282-47a3-a297-2cfe8cb59740" />
+</p>
+<br>
+
+<p>
+- To confirm that public visitor devices cannot gain visibility into internal enterprise naming architecture, I test the negative boundary of the LOBBY_INBOUND filter from PC5 in the Lobby VLAN (100.3.3.11). When executing the identical name resolution command toward R1, it fails and logs a name resolution error because of our explicit entry blocking the guest network from reaching the DNS server, proving that the security hole has been successfully closed. The reason we explicitly constructed this block is to protect our internal infrastructure footprint; allowing public guest machines to resolve hostname records for critical assets like R1 and R2 would grant potential intruders visibility into corporate naming schemas and internal routing layouts, which completely violates our commitment to an aggressive defense-in-depth security model. 
+To finish the ACL tests, I run the “show access-lists” command. Now that several tests across the subnets have been ran, we can see the ACLs now display matches, showing that they are successfully filtering traffic that is related to each ACL. This is very useful for troubleshooting issues, to see which ACLs are operational, and to monitor traffic.
+</p>
+<p>
+<img width="773" height="185" alt="image" src="https://github.com/user-attachments/assets/09cf90aa-b59e-466a-bbe6-750a7f2f74db" />
+</p>
+<p>
+<img width="768" height="536" alt="image" src="https://github.com/user-attachments/assets/d7087a39-db72-4d15-bca4-4a68215f8f52" />
+</p>
+<br>
+
+<p>
+- For the first Layer 2 test, I will test the performance of the Port Security configuration on our access layer by simulating a MAC spoofing attack. This defense mechanism is vital for stopping unauthorized edge entry, which is a major real-world risk where an intruder disconnects a legitimate workstation and plugs in an unauthorized laptop to bypass network boundaries. Port security enforces a hard MAC-to-port pinning strategy that ensures only verified corporate assets can inject frames into the switching fabric.
+  
+To carry out this test, I click on the connection linking Executive PC1 to SW1, and delete the cable. I then add Laptop 1, and establish a new copper straight-through cable connection running directly from the laptop's interface F0/1 into interface F0/2 on SW1. Because an unconfigured interface cannot transmit valid frames, I open the Laptop's settings, navigate to the IP configuration tab, and toggle the setting to DHCP. This action forces the laptop to start the DORA process and broadcast a DHCP Discover frame. The moment this frame hits the switch interface, SW1 identifies the unauthorized source MAC address, triggers a port-security violation, and shifts the physical port link light to solid red. I then open the SW1 CLI console and verify that a port-security violation error Syslog message has been generated, proving that the switch successfully locked down the port and neutralized the unmapped device. By forcing the port into an err-disabled state upon receiving an unmapped frame, we actively neutralize the attack string before the rogue host can execute reconnaissance scripts, scan internal segments, or sniff active broadcast streams.
+  
+If I were to want to restore the err-disabled interface to an operational state, there are two recovery methods I could use. The first is manual recovery, where I would enter the affected interface and issue the “shutdown” command followed by “no shutdown”, resetting the port and clearing the err-disabled condition. The second is automatic recovery through Cisco's ErrDisable Recovery feature, which can be configured to automatically re-enable interfaces disabled by specific violation types after a defined timer expires. ErrDisable is not limited to Port Security violations; it can also be triggered by several other security and protection mechanisms such as BPDU Guard, Power Policing, Dynamic ARP Inspection (DAI), and other interface protection features. It is important to first identify and correct the underlying cause of the violation before restoring it; otherwise, the interface will simply enter the err-disabled state again as soon as the switch detects the same problem.
+</p>
+<p>
+<img width="787" height="526" alt="image" src="https://github.com/user-attachments/assets/f6e4534c-6582-460e-906c-ad4a3484a458" />
+</p>
+<p>
+<img width="778" height="215" alt="image" src="https://github.com/user-attachments/assets/e56024d8-e5c6-4c3b-967c-e53c3f914905" />
+</p>
+<p>
+<img width="789" height="548" alt="image" src="https://github.com/user-attachments/assets/6d973ab5-25bf-44da-b49a-34ae03cf8175" />
+</p>
+<p>
+<img width="778" height="128" alt="image" src="https://github.com/user-attachments/assets/04f8bf89-8e85-4ab2-82a4-a6c10781ebf4" />
 </p>
 <p>
 
