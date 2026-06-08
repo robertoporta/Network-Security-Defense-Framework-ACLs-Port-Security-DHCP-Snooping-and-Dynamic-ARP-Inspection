@@ -404,5 +404,3 @@ To verify this check, I access the CLI on both SW4 and SW5 and run a status revi
 <p>
 <img width="716" height="361" alt="image" src="https://github.com/user-attachments/assets/f2a984fd-6d63-4df6-886b-8a27cc6105e7" />
 </p>
-
-
