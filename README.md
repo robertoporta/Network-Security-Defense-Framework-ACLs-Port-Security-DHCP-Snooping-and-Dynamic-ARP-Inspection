@@ -351,39 +351,58 @@ If I were to want to restore the err-disabled interface to an operational state,
 <br>
 
 <p>
-- 
+- In the next test, I will check edge trust boundaries enforced by DHCP Snooping by simulating a rogue DHCP server injection attack on an access switch port. This vulnerability represents a critical infrastructure threat where an attacker introduces a rogue dynamic provisioning system to lease out corrupted IP configuration metadata. If left unchecked, clients accepting these rogue parameters could be silently redirected to a malicious gateway, facilitating massive Man-in-the-Middle hijacking and credentials harvesting schemes. By designating user-facing interfaces as strictly untrusted, the access switch acts as an intelligent signaling filter that immediately parses and drops unauthenticated inbound server frames.
+  
+To execute this validation, I add a new generic server to simulate an attacker's rogue DHCP platform, connect it to SW2’s F0/15 port, which is configured as an untrusted edge port. I assign the rogue server an IP address of 100.2.2.200/24 within the Operations VLAN, enable the DHCP service, and create a malicious DHCP scope targeting the Operations subnet. The scope is intentionally configured to advertise the attacker's own address (100.2.2.200) as both the Default Gateway and DNS Server instead of the legitimate gateway (100.2.2.254) and correct DNS server. This simulates a real-world rogue DHCP attack where an attacker attempts to convince clients that all outbound traffic should be sent through the attacker's system. If a client accepts these settings, every packet destined outside the local subnet would first be forwarded to the attacker's machine, allowing the attacker to inspect, log, modify, or redirect traffic before passing it along to its intended destination.
+  
+To verify the blocking functionality, I move over to Operations PC3, open its command prompt, and force a dynamic reconfiguration sequence by entering “ipconfig /release” followed immediately by “ipconfig /renew”. I monitor the packet exchange and confirm that PC3 never accepts the rogue DHCP offers and instead maintains its legitimate router-assigned scope from R1, proving that SW2 successfully filtered the unauthorized DHCP server messages at the interface boundary. The terminal results confirm that the unauthorized lease distribution system is completely isolated at the edge, guaranteeing that internal nodes retain their legitimate, administrator-controlled configurations without interruption.
+
+Because we previously configured DHCP Snooping on SW2 and designated all user-facing access ports as untrusted, the switch automatically inspects DHCP traffic and drops any DHCPOFFER or DHCPACK messages arriving from those interfaces. Since only the uplink leading toward the authorized DHCP server on R1 was marked as trusted, the rogue server's responses never reach PC3, while legitimate DHCP traffic continues to pass normally. By dropping DHCP server messages arriving from untrusted interfaces, DHCP Snooping prevents clients from ever receiving these rogue configurations and preserves the integrity of the trusted infrastructure.
 </p>
 <p>
-
+<img width="782" height="503" alt="image" src="https://github.com/user-attachments/assets/5d3956fe-19d7-4e1b-9785-914ba828bbc8" />
+</p>
+<p>
+<img width="780" height="275" alt="image" src="https://github.com/user-attachments/assets/2bb0262a-0e5a-4ae0-8b05-5b8e99a766c4" />
+</p>
+<p>
+<img width="780" height="326" alt="image" src="https://github.com/user-attachments/assets/a739b274-76c3-43f6-b38a-a86d7009047b" />
+</p>
+<p>
+<img width="774" height="316" alt="image" src="https://github.com/user-attachments/assets/6db342a6-0eea-49e3-b83f-ce133aafc3a2" />
 </p>
 <br>
 
 <p>
-- 
+- In this test, I will verify the security performance of Dynamic ARP Inspection (DAI) against local network address hijacking and gateway spoofing attacks on the SW3 Access Layer Switch. An attacker connected to an untrusted port may attempt an ARP poisoning attack by sending fraudulent ARP messages that associate the IP address of the default gateway with the attacker's own MAC address. If successful, hosts update their ARP tables with the incorrect mapping and begin forwarding traffic through the attacker’s device, enabling a Man-in-the-Middle attack that allows interception, monitoring, and manipulation of local traffic.
+  
+DAI prevents this by inspecting all ARP packets arriving on untrusted interfaces and validating their IP-to-MAC mappings against the DHCP Snooping Binding Table created earlier in the project. Because this table only contains verified DHCP-learned bindings, any ARP packet claiming ownership of an IP address that does not match the recorded MAC address is immediately dropped. This creates a dependency where DHCP Snooping establishes trust and DAI enforces it at Layer 2.
+
+To demonstrate this protection mechanism, I add Laptop 2 into the lab, connect it to F0/15, an untrusted access interface on SW3, the access layer switch for the Lobby VLAN. I then manually assign the laptop with 100.3.3.254 for its IP address (as well as the default gateway and DNS server), which represents the default gateway for the Lobby VLAN. This intentionally creates an IP-to-MAC mismatch because the laptop’s MAC address does not match the gateway MAC address stored in the DHCP Snooping Binding Table. I then generate traffic from the laptop by pinging PC5 to trigger ARP activity on the network. As the spoofed ARP packets reach the switch, DAI compares the sender information against the trusted DHCP Snooping Binding Table and immediately drops any packet that fails validation. The failed ping indicates that communication to the target network was not successfully established, suggesting that ARP resolution and IP-to-MAC mapping were not completed due to the configured security controls, preventing potential gateway spoofing from affecting legitimate hosts.
+  
+If DAI were not enabled, hosts in the Lobby VLAN could accept the attacker’s fraudulent ARP advertisements and associate the gateway address 100.3.3.254 with the attacker’s MAC address. Traffic intended for the legitimate gateway would then be redirected through the attacker’s device, allowing full interception, modification, or redirection of communications before forwarding them to the real gateway. By enforcing IP-to-MAC validation against the DHCP Snooping Binding Table and dropping mismatches, DAI prevents ARP cache poisoning and preserves the integrity of Layer 2 communications.
 </p>
 <p>
-
+<img width="787" height="513" alt="image" src="https://github.com/user-attachments/assets/657609b3-9f58-40be-ae89-74f0f0c4b0b6" />
+</p>
+<p>
+<img width="776" height="251" alt="image" src="https://github.com/user-attachments/assets/7a8b4d07-e7b6-4607-85dd-a148149b8c9b" />
+</p>
+<p>
+<img width="776" height="387" alt="image" src="https://github.com/user-attachments/assets/e3ae9c93-9800-4c5f-89b6-22e1b309e2ea" />
 </p>
 <br>
 
 <p>
-- 
+- As a final verification, I perform a quick operational check of the physical port security protections applied to the server-facing switches SW4 and SW5. In enterprise environments, periodic validation of security controls is often sufficient to ensure that critical protections remain active and correctly configured, especially on stable infrastructure such as server access layers. This focuses on confirming that port security is functioning as expected on the interfaces connected to the servers.
+  
+To verify this check, I access the CLI on both SW4 and SW5 and run a status review using the “show port-security interface f0/1” command. This allows me to confirm that port security is enabled, the interface is in a secure operational state, and that the configured parameters (such as the violation mode and learned MAC address binding) remain correctly applied. Show commands are some of the most useful tools to use when troubleshooting and making sure security measures are operational. Since no violations are present, no corrective actions are required, and the existing configuration is confirmed to be stable and operational.
 </p>
 <p>
-
-</p>
-<br>
-
-<p>
-- 
+<img width="712" height="361" alt="image" src="https://github.com/user-attachments/assets/12ff27e2-b0b5-42e9-b4cb-bd239fb27d11" />
 </p>
 <p>
-
+<img width="716" height="361" alt="image" src="https://github.com/user-attachments/assets/f2a984fd-6d63-4df6-886b-8a27cc6105e7" />
 </p>
-<br>
-
-
-
-
 
 
